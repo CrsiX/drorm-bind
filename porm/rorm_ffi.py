@@ -3,6 +3,11 @@ import ctypes
 from typing import Optional, Union
 
 
+Row = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
+Stream = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
+Database = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
+
+
 class DBBackend(enum.IntEnum):
     """
     typedef int32_t DBBackend;
