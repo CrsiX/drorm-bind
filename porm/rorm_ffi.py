@@ -1,6 +1,6 @@
 import enum
 import ctypes
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 
 Row = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
@@ -142,6 +142,46 @@ class FFIString(ctypes.Structure):
 
     def __repr__(self) -> str:
         return f"<FFIString({self.size})>"
+
+
+class FFIStringSlice(ctypes.Structure):
+    """
+    typedef struct FFISlice_FFIString {
+      const struct FFIString *content;
+      size_t size;
+    } FFISlice_FFIString;
+    """
+
+    _fields_ = [
+        ("content", ctypes.POINTER(FFIString)),
+        ("size", ctypes.c_size_t)
+    ]
+
+    @classmethod
+    def new(cls, v: Union[List[str], List[bytes]]) -> "FFIStringSlice":
+        if not isinstance(v, list):
+            raise TypeError(f"Expected type list, not {type(v)}")
+        if not all([isinstance(i, str) for i in v]) and not all([isinstance(i, bytes) for i in v]):
+            raise TypeError("Expected list of str or list of bytes")
+        slices = [FFIString.new(i) for i in v]
+        t = FFIString * len(slices)
+        return FFIStringSlice(t(*slices), len(slices))
+
+    def to_list(self) -> List[FFIString]:
+        result = []
+        if self.size == 0:
+            return result
+        for i, v in enumerate(self.content):
+            if i >= self.size:
+                break
+            result.append(v)
+        return result
+
+    def __str__(self) -> str:
+        return f"[{', '.join(map(str, self.to_list()))}]"
+
+    def __repr__(self) -> str:
+        return f"<FFIStringSlice[{', '.join([str(v.size) for v in self.to_list()])}]>"
 
 
 class Error(ctypes.Structure):
