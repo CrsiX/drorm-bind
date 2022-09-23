@@ -2,7 +2,7 @@ import time
 import asyncio
 import logging
 
-from .rorm_ffi import *
+from .ffi import *
 
 
 DEFAULT_SHUTDOWN_DURATION: int = 1000  # milliseconds
