@@ -11,6 +11,10 @@ Database = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
 _CData = ctypes.Structure.mro()[1]
 
 
+def _mk_attr_name(e, t) -> str:
+    return f"u{e.value}_{t.__name__}"
+
+
 def make_slice(
         cls_name: str,
         referenced_type: _CData,
@@ -124,25 +128,25 @@ def make_tagged_struct(
         repr_: Optional[Callable[[], str]] = None,
         new: Optional[Callable] = None,
         extras: Optional[dict] = None
-) -> type:
-    def _mk_attr_name(e) -> str:
-        return f"u{e.value}_{types[e].__name__}"
-
+) -> Type[_CData]:
     if isinstance(types, dict):
-        union_fields = [(_mk_attr_name(i), types[i]) for i in types]
+        union_fields = [(_mk_attr_name(i, types[i]), types[i]) for i in types]
         value_cls = type(f"{cls_name}Union", (ctypes.Union,), {"_fields_": union_fields})
     else:
         value_cls = types
+
+    def get_type(_) -> _CData:
+        return value_cls
 
     def variant(self: cls_name) -> tag_type:
         return tag_type(self.tag)
 
     def __repr__(self: cls_name) -> str:
-        return f"<{type(self).__name__}({self.variant})>"
+        return f"<{type(self).__name__}({self.variant!s})>"
 
     if isinstance(types, dict):
         def get(self) -> Optional[_CData]:
-            return getattr(self.value, _mk_attr_name(tag_type(self.tag)), None)
+            return getattr(self.value, _mk_attr_name(tag_type(self.tag), types[self.tag]), None)
     else:
         def get(self) -> Optional[types]:
             return self.value
@@ -155,6 +159,7 @@ def make_tagged_struct(
             ("value", value_cls)
         ],
         "get": get,
+        "get_type": classmethod(get_type),
         "variant": property(variant)
     }
     if new is not None:
@@ -168,7 +173,7 @@ def _error_is_error(self) -> bool:
 
 
 def _error_message(self) -> Optional[FFIString]:
-    if ErrorTag(self.tag) in self._available_messages_:
+    if ErrorTag(self.tag) in (ErrorTag.RUNTIME_ERROR, ErrorTag.CONFIGURATION_ERROR, ErrorTag.DATABASE_ERROR):
         return self.error
     return None
 
@@ -186,6 +191,46 @@ Error = make_tagged_struct(
     """,
     FFIString,
     extras={"is_error": _error_is_error, "message": property(_error_message)}
+)
+
+
+def _value_new(_, value, tag: Optional[ValueTag] = None) -> "Value":
+    known_default_conversions = {
+        bool: (ctypes.c_bool, ValueTag.BOOL),
+        int: (ctypes.c_int64, ValueTag.I64),
+        float: (ctypes.c_double, ValueTag.F64),
+        str: (FFIString.new, ValueTag.STRING),
+        bytes: (FFIString.new, ValueTag.STRING)
+    }
+    if tag is None:
+        for k in known_default_conversions:
+            if isinstance(value, k):
+                value = known_default_conversions[k][0](value)
+                tag = known_default_conversions[k][1]
+                break
+    if tag is None:
+        raise TypeError(f"Unknown type {type(value)}, provide explicit conversion yourself")
+    union_type = Value.get_type()  # noqa
+    return Value(tag, union_type(**{_mk_attr_name(tag, _value_type_conversion[tag]): value}))
+
+
+_value_type_conversion = {
+    ValueTag.IDENT: FFIString,
+    ValueTag.STRING: FFIString,
+    ValueTag.I64: ctypes.c_int64,
+    ValueTag.I32: ctypes.c_int32,
+    ValueTag.I16: ctypes.c_int16,
+    ValueTag.BOOL: ctypes.c_bool,
+    ValueTag.F32: ctypes.c_float,
+    ValueTag.F64: ctypes.c_double
+}
+_value_new.__name__ = "new"
+Value = make_tagged_struct(
+    "Value",
+    ValueTag,
+    """TODO""",
+    _value_type_conversion,
+    new=_value_new
 )
 
 
