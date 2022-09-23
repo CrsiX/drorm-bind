@@ -1,5 +1,5 @@
 import ctypes
-from typing import Callable, List, Optional, Type, Union
+from typing import Callable, Dict, List, Optional, Tuple, Type, Union
 
 from .ffi_enums import *
 
@@ -93,7 +93,7 @@ def _make_string() -> Type["FFIString"]:
     )
 
 
-def _ffi_string_slice_new(_, v: Union[List[str], List[bytes]]) -> "FFIStringSlice":
+def _ffi_string_slice_new(_, v: List[Union[bytes, str]]) -> "FFIStringSlice":
     if not isinstance(v, list):
         raise TypeError(f"Expected type list, not {type(v)}")
     slices = [FFIString.new(i) for i in v]
@@ -116,33 +116,77 @@ FFIStringSlice = make_slice(
 )
 
 
-class Error(ctypes.Structure):
+def make_tagged_struct(
+        cls_name: str,
+        tag_type: Type[enum.IntEnum],
+        docstring: str,
+        types: Union[_CData, Dict[enum.IntEnum, _CData]],
+        repr_: Optional[Callable[[], str]] = None,
+        new: Optional[Callable] = None,
+        extras: Optional[dict] = None
+) -> type:
+    def _mk_attr_name(e) -> str:
+        return f"u{e.value}_{types[e].__name__}"
+
+    if isinstance(types, dict):
+        union_fields = [(_mk_attr_name(i), types[i]) for i in types]
+        value_cls = type(f"{cls_name}Union", (ctypes.Union,), {"_fields_": union_fields})
+    else:
+        value_cls = types
+
+    def variant(self: cls_name) -> tag_type:
+        return tag_type(self.tag)
+
+    def __repr__(self: cls_name) -> str:
+        return f"<{type(self).__name__}({self.variant})>"
+
+    if isinstance(types, dict):
+        def get(self) -> Optional[_CData]:
+            return getattr(self.value, _mk_attr_name(tag_type(self.tag)), None)
+    else:
+        def get(self) -> Optional[types]:
+            return self.value
+
+    kwargs = {
+        "__doc__": docstring,
+        "__repr__": repr_ or __repr__,
+        "_fields_": [
+            ("tag", ctypes.c_int),
+            ("value", value_cls)
+        ],
+        "get": get,
+        "variant": property(variant)
+    }
+    if new is not None:
+        kwargs["new"] = classmethod(new)
+    kwargs.update(extras or {})
+    return type(cls_name, (ctypes.Structure,), kwargs)
+
+
+def _error_is_error(self) -> bool:
+    return ErrorTag(self.tag) != ErrorTag.NO_ERROR
+
+
+def _error_message(self) -> Optional[FFIString]:
+    if ErrorTag(self.tag) in self._available_messages_:
+        return self.error
+    return None
+
+
+_error_is_error.__name__ = "is_error"
+_error_message.__name__ = "message"
+Error = make_tagged_struct(
+    "Error",
+    ErrorTag,
     """
     typedef struct Error {
       Error_Tag tag;
       struct FFIString error;
     } Error;
-    """
-
-    _fields_ = [
-        ("tag", ctypes.c_int),
-        ("error", FFIString)
-    ]
-
-    _available_messages_ = (ErrorTag.RUNTIME_ERROR, ErrorTag.CONFIGURATION_ERROR, ErrorTag.DATABASE_ERROR)
-
-    @property
-    def message(self) -> Optional[FFIString]:
-        if ErrorTag(self.tag) in self._available_messages_:
-            return self.error
-        return None
-
-    @property
-    def variant(self) -> ErrorTag:
-        return ErrorTag(self.tag)
-
-    def is_error(self) -> bool:
-        return ErrorTag(self.tag) != ErrorTag.NO_ERROR
+    """,
+    FFIString,
+    extras={"is_error": _error_is_error, "message": property(_error_message)}
+)
 
 
 class DBConnectOptions(ctypes.Structure):
