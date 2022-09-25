@@ -120,6 +120,10 @@ FFIStringSlice = make_slice(
 )
 
 
+def _mk_fields(types: Dict[enum.IntEnum, _CData]) -> List[Tuple[str, _CData]]:
+    return [(_mk_attr_name(i, types[i]), types[i]) for i in types]
+
+
 def make_tagged_struct(
         cls_name: str,
         tag_type: Type[enum.IntEnum],
@@ -130,7 +134,7 @@ def make_tagged_struct(
         extras: Optional[dict] = None
 ) -> Type[_CData]:
     if isinstance(types, dict):
-        union_fields = [(_mk_attr_name(i, types[i]), types[i]) for i in types]
+        union_fields = _mk_fields(types)
         value_cls = type(f"{cls_name}Union", (ctypes.Union,), {"_fields_": union_fields})
     else:
         value_cls = types
@@ -232,6 +236,78 @@ Value = make_tagged_struct(
     _value_type_conversion,
     new=_value_new
 )
+
+
+class Condition(ctypes.Structure):
+    pass
+
+
+UnaryCondition = make_tagged_struct(
+    "UnaryCondition",
+    UnaryConditionTag,
+    """TODO""",
+    {
+        UnaryConditionTag.IS_NULL: ctypes.POINTER(Condition),
+        UnaryConditionTag.IS_NOT_NULL: ctypes.POINTER(Condition),
+        UnaryConditionTag.EXISTS: ctypes.POINTER(Condition),
+        UnaryConditionTag.NOT_EXISTS: ctypes.POINTER(Condition),
+        UnaryConditionTag.NOT: ctypes.POINTER(Condition)
+    }
+)
+
+BinaryCondition = make_tagged_struct(
+    "BinaryCondition",
+    BinaryConditionTag,
+    """TODO""",
+    {
+        BinaryConditionTag.EQUALS: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.NOT_EQUALS: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.GREATER: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.GREATER_OR_EQUALS: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.LESS: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.LESS_OR_EQUALS: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.LIKE: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.NOT_LIKE: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.REGEXP: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.NOT_REGEXP: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.IN: ctypes.POINTER(Condition) * 2,
+        BinaryConditionTag.NOT_IN: ctypes.POINTER(Condition) * 2,
+    }
+)
+
+TernaryCondition = make_tagged_struct(
+    "TernaryCondition",
+    TernaryConditionTag,
+    """TODO""",
+    {
+        TernaryConditionTag.BETWEEN: ctypes.POINTER(Condition) * 3,
+        TernaryConditionTag.NOT_BETWEEN: ctypes.POINTER(Condition) * 3
+    }
+)
+
+FFIConditionSlice = make_slice(
+    "FFIConditionSlice",
+    Condition,
+    """TODO"""
+)
+
+_condition_union_fields = {
+    ConditionTag.CONJUNCTION: FFIConditionSlice,
+    ConditionTag.DISJUNCTION: FFIConditionSlice,
+    ConditionTag.UNARY_CONDITION: UnaryCondition,
+    ConditionTag.BINARY_CONDITION: BinaryCondition,
+    ConditionTag.TERNARY_CONDITION: TernaryCondition,
+    ConditionTag.VALUE: Value
+}
+_replace_condition_class = make_tagged_struct(
+    "Condition",
+    ConditionTag,
+    """TODO""",
+    _condition_union_fields
+)
+Condition._fields_ = _mk_fields(_condition_union_fields)
+for _copied_field in ["__str__", "__repr__", "__doc__", "get", "variant", "get_type"]:
+    setattr(Condition, _copied_field, getattr(_replace_condition_class, _copied_field))
 
 
 class DBConnectOptions(ctypes.Structure):
