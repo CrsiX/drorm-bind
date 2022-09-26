@@ -38,7 +38,7 @@ class ConditionTag(enum.IntEnum):
     DISJUNCTION = 1
     UNARY_CONDITION = 2
     BINARY_CONDITION = 3
-    TERTIARY_CONDITION = 4
+    TERNARY_CONDITION = 4
     VALUE = 5
 
 
@@ -73,9 +73,9 @@ class BinaryConditionTag(enum.IntEnum):
     NOT_IN = 11
 
 
-class TertiaryConditionTag(enum.IntEnum):
+class TernaryConditionTag(enum.IntEnum):
     """
-    typedef int_t TertiaryConditionTag;
+    typedef int_t TernaryConditionTag;
     """
 
     BETWEEN = 0

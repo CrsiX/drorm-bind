@@ -273,16 +273,23 @@ _ternary_condition_types = {
 }
 
 
-def _unary_condition_new(_, v) -> "FFIUnaryCondition":
-    pass
+def _unary_condition_new(cls, condition: FFICondition, tag: UnaryConditionTag) -> "FFIUnaryCondition":
+    fields = {_mk_attr_name(tag, _unary_condition_types[tag]): ctypes.pointer(condition)}
+    return FFIUnaryCondition(tag, cls.get_type()(**fields))
 
 
-def _binary_condition_new(_, a, b) -> "FFIBinaryCondition":
-    pass
+def _binary_condition_new(cls, a: FFICondition, b: FFICondition, tag: BinaryConditionTag) -> "FFIBinaryCondition":
+    v = (ctypes.POINTER(FFICondition) * 2)(ctypes.pointer(a), ctypes.pointer(b))
+    fields = {_mk_attr_name(tag, _binary_condition_types[tag]): v}
+    return FFIBinaryCondition(tag, cls.get_type()(**fields))
 
 
-def _ternary_condition_new(_, a, b, c) -> "FFITernaryCondition":
-    pass
+def _ternary_condition_new(
+        cls, a: FFICondition, b: FFICondition, c: FFICondition, tag: TernaryConditionTag
+) -> "FFITernaryCondition":
+    v = (ctypes.POINTER(FFICondition) * 3)(ctypes.pointer(a), ctypes.pointer(b), ctypes.pointer(c))
+    fields = {_mk_attr_name(tag, _ternary_condition_types[tag]): v}
+    return FFITernaryCondition(tag, cls.get_type()(**fields))
 
 
 _unary_condition_new.__name__ = "new"
