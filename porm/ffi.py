@@ -166,6 +166,8 @@ def make_tagged_struct(
         "get_type": classmethod(get_type),
         "variant": property(variant)
     }
+    if isinstance(types, dict):
+        kwargs["_original_variants"] = types
     if new is not None:
         kwargs["new"] = classmethod(new)
     kwargs.update(extras or {})
@@ -178,7 +180,7 @@ def _error_is_error(self) -> bool:
 
 def _error_message(self) -> Optional[FFIString]:
     if ErrorTag(self.tag) in (ErrorTag.RUNTIME_ERROR, ErrorTag.CONFIGURATION_ERROR, ErrorTag.DATABASE_ERROR):
-        return self.error
+        return self.value
     return None
 
 
@@ -207,6 +209,8 @@ def _value_new(_, value, tag: Optional[ValueTag] = None) -> "FFIValue":
         bytes: (FFIString.new, ValueTag.STRING)
     }
     if tag is None:
+        if isinstance(value, FFIValue):
+            return value
         for k in known_default_conversions:
             if isinstance(value, k):
                 value = known_default_conversions[k][0](value)
@@ -214,7 +218,7 @@ def _value_new(_, value, tag: Optional[ValueTag] = None) -> "FFIValue":
                 break
     if tag is None:
         raise TypeError(f"Unknown type {type(value)}, provide explicit conversion yourself")
-    union_type = Value.get_type()  # noqa
+    union_type = FFIValue.get_type()
     return FFIValue(tag, union_type(**{_mk_attr_name(tag, _value_type_conversion[tag]): value}))
 
 
@@ -242,54 +246,90 @@ class FFICondition(ctypes.Structure):
     pass
 
 
+_unary_condition_types = {
+    UnaryConditionTag.IS_NULL: ctypes.POINTER(FFICondition),
+    UnaryConditionTag.IS_NOT_NULL: ctypes.POINTER(FFICondition),
+    UnaryConditionTag.EXISTS: ctypes.POINTER(FFICondition),
+    UnaryConditionTag.NOT_EXISTS: ctypes.POINTER(FFICondition),
+    UnaryConditionTag.NOT: ctypes.POINTER(FFICondition)
+}
+_binary_condition_types = {
+    BinaryConditionTag.EQUALS: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.NOT_EQUALS: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.GREATER: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.GREATER_OR_EQUALS: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.LESS: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.LESS_OR_EQUALS: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.LIKE: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.NOT_LIKE: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.REGEXP: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.NOT_REGEXP: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.IN: ctypes.POINTER(FFICondition) * 2,
+    BinaryConditionTag.NOT_IN: ctypes.POINTER(FFICondition) * 2,
+}
+_ternary_condition_types = {
+    TernaryConditionTag.BETWEEN: ctypes.POINTER(FFICondition) * 3,
+    TernaryConditionTag.NOT_BETWEEN: ctypes.POINTER(FFICondition) * 3
+}
+
+
+def _unary_condition_new(_, v) -> "FFIUnaryCondition":
+    pass
+
+
+def _binary_condition_new(_, a, b) -> "FFIBinaryCondition":
+    pass
+
+
+def _ternary_condition_new(_, a, b, c) -> "FFITernaryCondition":
+    pass
+
+
+_unary_condition_new.__name__ = "new"
+_binary_condition_new.__name__ = "new"
+_ternary_condition_new.__name__ = "new"
+
 FFIUnaryCondition = make_tagged_struct(
     "FFIUnaryCondition",
     UnaryConditionTag,
     """TODO""",
-    {
-        UnaryConditionTag.IS_NULL: ctypes.POINTER(FFICondition),
-        UnaryConditionTag.IS_NOT_NULL: ctypes.POINTER(FFICondition),
-        UnaryConditionTag.EXISTS: ctypes.POINTER(FFICondition),
-        UnaryConditionTag.NOT_EXISTS: ctypes.POINTER(FFICondition),
-        UnaryConditionTag.NOT: ctypes.POINTER(FFICondition)
-    }
+    _unary_condition_types
 )
-
 FFIBinaryCondition = make_tagged_struct(
     "FFIBinaryCondition",
     BinaryConditionTag,
     """TODO""",
-    {
-        BinaryConditionTag.EQUALS: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.NOT_EQUALS: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.GREATER: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.GREATER_OR_EQUALS: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.LESS: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.LESS_OR_EQUALS: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.LIKE: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.NOT_LIKE: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.REGEXP: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.NOT_REGEXP: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.IN: ctypes.POINTER(FFICondition) * 2,
-        BinaryConditionTag.NOT_IN: ctypes.POINTER(FFICondition) * 2,
-    }
+    _binary_condition_types
 )
-
 FFITernaryCondition = make_tagged_struct(
     "FFITernaryCondition",
     TernaryConditionTag,
     """TODO""",
-    {
-        TernaryConditionTag.BETWEEN: ctypes.POINTER(FFICondition) * 3,
-        TernaryConditionTag.NOT_BETWEEN: ctypes.POINTER(FFICondition) * 3
-    }
+    _ternary_condition_types
 )
 
+FFIUnaryCondition.new = classmethod(_unary_condition_new)
+FFIBinaryCondition.new = classmethod(_binary_condition_new)
+FFITernaryCondition.new = classmethod(_ternary_condition_new)
+
+
+def _ffi_condition_slice_new(cls, v: List[FFICondition]) -> "FFIConditionSlice":
+    if not isinstance(v, list):
+        raise TypeError(f"Expected type list, not {type(v)}")
+    if not all(isinstance(i, FFICondition) for i in v):
+        raise TypeError(f"All elements of a {cls.__name__} must be of type 'FFICondition'")
+    t = FFICondition * len(v)
+    return FFIConditionSlice(t(*v), len(v))
+
+
+_ffi_condition_slice_new.__name__ = "new"
 FFIConditionSlice = make_slice(
     "FFIConditionSlice",
     FFICondition,
     """TODO"""
 )
+FFIConditionSlice.new = classmethod(_ffi_condition_slice_new)
+
 
 _condition_union_fields = {
     ConditionTag.CONJUNCTION: FFIConditionSlice,
@@ -305,8 +345,29 @@ _replace_condition_class = make_tagged_struct(
     """TODO""",
     _condition_union_fields
 )
-FFICondition._fields_ = _mk_fields(_condition_union_fields)
-for _copied_field in ["__str__", "__repr__", "__doc__", "get", "variant", "get_type"]:
+
+
+def _condition_new(_, tag: ConditionTag, *conditions):
+    if tag == ConditionTag.CONJUNCTION or tag == ConditionTag.DISJUNCTION:
+        value = FFIConditionSlice.new(list(conditions))
+    elif tag == ConditionTag.UNARY_CONDITION:
+        value = len(conditions) == 1 and FFIUnaryCondition.new(*conditions)
+    elif tag == ConditionTag.BINARY_CONDITION:
+        value = len(conditions) == 2 and FFIBinaryCondition.new(*conditions)
+    elif tag == ConditionTag.TERNARY_CONDITION:
+        value = len(conditions) == 3 and FFITernaryCondition.new(*conditions)
+    elif tag == ConditionTag.VALUE:
+        value = len(conditions) == 1 and FFIValue.new(*conditions)
+    else:
+        raise TypeError(f"Invalid/unknown condition type enum {tag!r}")
+    if not value:
+        raise ValueError(f"Invalid number of options {len(conditions)}")
+    return FFICondition(**{_mk_attr_name(tag, _condition_union_fields[tag]): value}, tag=tag)
+
+
+_condition_new.__name__ = "new"
+FFICondition.new = classmethod(_condition_new)
+for _copied_field in ["__str__", "__repr__", "__doc__", "_fields_", "get", "variant", "get_type"]:
     setattr(FFICondition, _copied_field, getattr(_replace_condition_class, _copied_field))
 
 
