@@ -6,7 +6,7 @@ from .ffi import *
 
 
 DEFAULT_SHUTDOWN_DURATION: int = 1000  # milliseconds
-MAX_CONNECTIVITY_POLLS: int = 100_000
+CONNECTIVITY_TIMEOUT: float = 10  # seconds
 
 
 class PyORM:
@@ -17,13 +17,14 @@ class PyORM:
     :param shutdown_duration: max time in milliseconds the runtime may spend to shutdown itself
     """
 
+    _available: bool
     _library: ctypes.CDLL
     _logger: Optional[logging.Logger]
     _options: DBConnectOptions
     _database: Optional[Database]
     _self_pointer: ctypes.POINTER(ctypes.c_size_t)
     _shutdown_duration: ctypes.c_uint64
-    _max_connectivity_iterations: int
+    _connectivity_timeout: float
 
     def __init__(
             self,
@@ -31,15 +32,16 @@ class PyORM:
             options: DBConnectOptions,
             logger: Optional[logging.Logger] = None,
             shutdown_duration: int = DEFAULT_SHUTDOWN_DURATION,
-            max_connectivity_polls: int = MAX_CONNECTIVITY_POLLS
+            connectivity_timeout: float = CONNECTIVITY_TIMEOUT
     ):
+        self._available = False
         self._library = ctypes.CDLL(library)
         self._logger = logger
         self._options = options
+        self._database = None
         self._self_pointer = ctypes.pointer(ctypes.c_size_t(id(self)))
         self._shutdown_duration = ctypes.c_uint64(shutdown_duration)
-        self._max_connectivity_iterations = max_connectivity_polls
-        self._database = None
+        self._connectivity_timeout = connectivity_timeout
 
     async def __aenter__(self) -> "PyORM":
         """
@@ -97,16 +99,16 @@ class PyORM:
         if exc is not None:
             self._logger and self._logger.warning("Failed to start ORM runtime")
             raise exc
+        self._logger and self._logger.debug("Started ORM runtime")
 
         # Plainly awaiting the event will result in a deadlock
         # here, therefore sleeping shortly to fix it
         self._library.rorm_db_connect(self._options, db_connect_callback, self._self_pointer)
-        iterations = 0
+        start = time.time()
         while not connected.is_set():
-            time.sleep(0.00001)
-            iterations += 1
-            if iterations >= self._max_connectivity_iterations:
-                raise RuntimeError("Max number of connectivity polls reached, is the database reachable?")
+            time.sleep(0.0001)
+            if (time.time() - start) >= self._connectivity_timeout:
+                raise RuntimeError("Connectivity timeout reached, is the database reachable?")
         await connected.wait()
 
         if exc is not None:
@@ -115,11 +117,19 @@ class PyORM:
         if self._database is None:
             raise RuntimeError("Connection hasn't been set up properly, the ORM callback probably delivered wrong data")
 
+        self._available = True
+        self._logger and self._logger.debug(f"Connected to database in {time.time() - start:.3f}s")
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         exc: Optional[RuntimeError] = None
         closed = asyncio.Event()
+
+        if self._database is None:
+            self._logger and self._logger.debug("Can't close database connection, database hasn't been set up properly")
+        else:
+            self._library.rorm_db_free(self._database)
+            self._logger and self._logger.debug("Closed database connection")
 
         @ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_size_t), Error)
         def runtime_shutdown_callback(context: ctypes.POINTER(ctypes.c_size_t), error: Error):
@@ -139,6 +149,9 @@ class PyORM:
 
         self._library.rorm_runtime_shutdown(self._shutdown_duration, runtime_shutdown_callback, self._self_pointer)
         await closed.wait()
+
+        self._available = False
+        self._logger and self._logger.debug("Closed ORM runtime")
         if exc is not None:
             raise exc
         global _living_orm
