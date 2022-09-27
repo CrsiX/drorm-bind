@@ -6,7 +6,9 @@ from .ffi_enums import *
 
 Row = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
 Stream = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
+RowList = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
 Database = ctypes.POINTER(ctypes.c_size_t)  # real type signature unknown
+ContextType = ctypes.POINTER(ctypes.c_size_t)
 
 _CData = ctypes.Structure.mro()[1]
 
@@ -202,11 +204,12 @@ Error = make_tagged_struct(
 
 def _value_new(_, value, tag: Optional[ValueTag] = None) -> "FFIValue":
     known_default_conversions = {
+        type(None): (ctypes.c_void_p, ValueTag.NULL),
         bool: (ctypes.c_bool, ValueTag.BOOL),
         int: (ctypes.c_int64, ValueTag.I64),
         float: (ctypes.c_double, ValueTag.F64),
         str: (FFIString.new, ValueTag.STRING),
-        bytes: (FFIString.new, ValueTag.STRING)
+        bytes: (FFIString.new, ValueTag.BINARY)
     }
     if tag is None:
         if isinstance(value, FFIValue):
@@ -223,6 +226,7 @@ def _value_new(_, value, tag: Optional[ValueTag] = None) -> "FFIValue":
 
 
 _value_type_conversion = {
+    ValueTag.NULL: ctypes.c_void_p,
     ValueTag.IDENT: FFIString,
     ValueTag.STRING: FFIString,
     ValueTag.I64: ctypes.c_int64,
@@ -230,7 +234,8 @@ _value_type_conversion = {
     ValueTag.I16: ctypes.c_int16,
     ValueTag.BOOL: ctypes.c_bool,
     ValueTag.F32: ctypes.c_float,
-    ValueTag.F64: ctypes.c_double
+    ValueTag.F64: ctypes.c_double,
+    ValueTag.BINARY: FFIString
 }
 _value_new.__name__ = "new"
 FFIValue = make_tagged_struct(
@@ -273,19 +278,19 @@ _ternary_condition_types = {
 }
 
 
-def _unary_condition_new(cls, condition: FFICondition, tag: UnaryConditionTag) -> "FFIUnaryCondition":
+def _unary_condition_new(cls, tag: UnaryConditionTag, condition: FFICondition) -> "FFIUnaryCondition":
     fields = {_mk_attr_name(tag, _unary_condition_types[tag]): ctypes.pointer(condition)}
     return FFIUnaryCondition(tag, cls.get_type()(**fields))
 
 
-def _binary_condition_new(cls, a: FFICondition, b: FFICondition, tag: BinaryConditionTag) -> "FFIBinaryCondition":
+def _binary_condition_new(cls, tag: BinaryConditionTag, a: FFICondition, b: FFICondition) -> "FFIBinaryCondition":
     v = (ctypes.POINTER(FFICondition) * 2)(ctypes.pointer(a), ctypes.pointer(b))
     fields = {_mk_attr_name(tag, _binary_condition_types[tag]): v}
     return FFIBinaryCondition(tag, cls.get_type()(**fields))
 
 
 def _ternary_condition_new(
-        cls, a: FFICondition, b: FFICondition, c: FFICondition, tag: TernaryConditionTag
+        cls, tag: TernaryConditionTag, a: FFICondition, b: FFICondition, c: FFICondition
 ) -> "FFITernaryCondition":
     v = (ctypes.POINTER(FFICondition) * 3)(ctypes.pointer(a), ctypes.pointer(b), ctypes.pointer(c))
     fields = {_mk_attr_name(tag, _ternary_condition_types[tag]): v}
@@ -358,11 +363,11 @@ def _condition_new(_, tag: ConditionTag, *conditions):
     if tag == ConditionTag.CONJUNCTION or tag == ConditionTag.DISJUNCTION:
         value = FFIConditionSlice.new(list(conditions))
     elif tag == ConditionTag.UNARY_CONDITION:
-        value = len(conditions) == 1 and FFIUnaryCondition.new(*conditions)
+        value = len(conditions) == 1 and conditions[0]
     elif tag == ConditionTag.BINARY_CONDITION:
-        value = len(conditions) == 2 and FFIBinaryCondition.new(*conditions)
+        value = len(conditions) == 1 and conditions[0]
     elif tag == ConditionTag.TERNARY_CONDITION:
-        value = len(conditions) == 3 and FFITernaryCondition.new(*conditions)
+        value = len(conditions) == 1 and conditions[0]
     elif tag == ConditionTag.VALUE:
         value = len(conditions) == 1 and FFIValue.new(*conditions)
     else:

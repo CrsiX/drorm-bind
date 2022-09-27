@@ -87,12 +87,23 @@ class ValueTag(enum.IntEnum):
     typedef int_t ValueTag;
     """
 
-    IDENT = 0
-    STRING = 1
-    I64 = 2
-    I32 = 3
-    I16 = 4
-    BOOL = 5
-    F64 = 6
-    F32 = 7
-    NULL = 8
+    NULL = 0
+    IDENT = 1
+    """Representation of an identifier, e.g. column. This value will not be escaped! Don't pass unchecked data to it!"""
+    STRING = 2
+    I64 = 3
+    I32 = 4
+    I16 = 5
+    BOOL = 6
+    F64 = 7
+    F32 = 8
+    BINARY = 9
+
+
+class OptionTag(enum.IntEnum):
+    """
+    typedef int_t OptionTag;
+    """
+
+    NONE = 0
+    SOME = 1
