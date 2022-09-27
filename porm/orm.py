@@ -3,6 +3,7 @@ import asyncio
 import logging
 
 from .ffi import *
+from . import _utils
 
 
 DEFAULT_SHUTDOWN_DURATION: int = 1000  # milliseconds
@@ -43,9 +44,25 @@ class PyORM:
         self._shutdown_duration = ctypes.c_uint64(shutdown_duration)
         self._connectivity_timeout = connectivity_timeout
 
+    def __check(self, callback_name: str, context: ContextType) -> Optional[RuntimeError]:
+        """
+        Check the environment settings and supplied pointers for validity
+
+        :param callback_name: name of the callback function that executes this checker
+        :param context: reference to a self pointer
+        :return: optional RuntimeError when pointers are invalid or the living ORM value changed
+        """
+
+        if _living_orm is None:
+            return RuntimeError(f"Callback {callback_name!r} without living context")
+        if _utils.is_null_ptr(context):
+            return RuntimeError("Supplied context pointer is a NULL pointer")
+        if id(_living_orm) != context.contents.value or id(_living_orm) != id(self):
+            return RuntimeError(f"Callback {callback_name!r} with different context than expected")
+
     async def __aenter__(self) -> "PyORM":
         """
-        Start the Rust runtime and connect to the database
+        Start the ORM runtime and connect to the database
 
         :raises RuntimeError: when something went wrong starting the runtime or connecting to the database
         """
@@ -60,35 +77,28 @@ class PyORM:
         started = asyncio.Event()
         connected = asyncio.Event()
 
-        @ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_size_t), Error)
-        def runtime_start_callback(context: ctypes.POINTER(ctypes.c_size_t), error: Error):
+        @ctypes.CFUNCTYPE(None, ContextType, Error)
+        def runtime_start_callback(context: ContextType, error: Error):
             """
             void (*callback)(void*, struct Error)
             """
 
             nonlocal exc
-            global _living_orm
-            if _living_orm is None:
-                exc = RuntimeError("Callback 'runtime_start' without living context")
-            if id(_living_orm) != context.contents.value or id(_living_orm) != id(self):
-                exc = RuntimeError("Callback 'runtime_start' with different context than expected")
-            if error.is_error():
+            exc = self.__check("runtime_start_callback", context)
+            if exc is None and error.is_error():
                 exc = RuntimeError(f"Failed to start ORM runtime: {error.variant!s}: {error.message}")
             started.set()
 
-        @ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_size_t), Database, Error)
-        def db_connect_callback(context: ctypes.POINTER(ctypes.c_size_t), database: Database, error: Error):
+        @ctypes.CFUNCTYPE(None, ContextType, Database, Error)
+        def db_connect_callback(context: ContextType, database: Database, error: Error):
             """
             void (*callback)(void*, Database*, struct Error)
             """
 
             nonlocal exc
-            global _living_orm
-            if _living_orm is None:
-                exc = RuntimeError("Callback 'db_connect' without living context")
-            if id(_living_orm) != context.contents.value or id(_living_orm) != id(self):
-                exc = RuntimeError("Callback 'db_connect' with different context than expected")
-            if error.is_error():
+            exc = self.__check("db_connect_callback", context)
+            if exc is None and error.is_error():
+                self._logger and self._logger.warning(f"Failed to connect to database: {error.message}")
                 exc = RuntimeError(f"Failed to connect to database: {error.variant!s}: {error.message}")
             else:
                 self._database = database
@@ -122,6 +132,12 @@ class PyORM:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """
+        Close the database connection, clean up and shutdown the ORM runtime
+
+        :raises RuntimeError: when shutting down the ORM runtime failed
+        """
+
         exc: Optional[RuntimeError] = None
         closed = asyncio.Event()
 
@@ -131,19 +147,15 @@ class PyORM:
             self._library.rorm_db_free(self._database)
             self._logger and self._logger.debug("Closed database connection")
 
-        @ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_size_t), Error)
-        def runtime_shutdown_callback(context: ctypes.POINTER(ctypes.c_size_t), error: Error):
+        @ctypes.CFUNCTYPE(None, ContextType, Error)
+        def runtime_shutdown_callback(context: ContextType, error: Error):
             """
             void (*callback)(void*, struct Error)
             """
 
             nonlocal exc
-            global _living_orm
-            if _living_orm is None:
-                exc = RuntimeError("Callback 'runtime_shutdown' without living context")
-            if id(_living_orm) != context.contents.value or id(_living_orm) != id(self):
-                exc = RuntimeError("Callback 'runtime_shutdown' with different context than expected")
-            if error.is_error():
+            exc = self.__check("db_connect_callback", context)
+            if exc is None and error.is_error():
                 exc = RuntimeError(f"Failed to shutdown ORM runtime: {error.variant!s}: {error.message}")
             closed.set()
 
