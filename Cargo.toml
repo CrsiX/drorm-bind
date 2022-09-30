@@ -1,0 +1,21 @@
+[package]
+name = "rorm-python"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rorm_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.16", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.16", features = ["tokio-runtime"] }
+tokio = "*"
+chrono = { version = "^0.4" }
+# TODO: Determine which TLS library to use: tokio-native-tls vs. tokio-rustls
+# TODO: Check out if the binary distribution easily runs on some Python test env without build tools!
+rorm-db = { version = "0.1.0", path = "rorm/rorm/rorm-db", features = ["tokio-rustls"] }
+rorm-sql = { version = "0.1.0", path = "rorm/rorm/rorm-sql" }
+
+[package.metadata.maturin]
+name = "rorm_python.bindings"
