@@ -38,6 +38,57 @@ struct Database {
     db: Box<rorm_db::Database>,
 }
 
+#[pymethods(module = "rorm_python.bindings")]
+impl Database {
+    /// Get the columns of all rows of a table synchronously
+    fn query_all_sync<'p>(
+        self_: PyRef<Self>,
+        py: Python<'p>,
+        table: String,
+        columns: Vec<(&str, DatabaseValueType)>,
+    ) -> PyResult<&'p PyList> {
+        let db: &rorm_db::Database = self_.db.as_ref();
+        let cols: Vec<&str> = columns.iter().map(|e| e.0).collect();
+        let mut results: Vec<HashMap<&str, PyObject>> = Vec::new();
+        let result = pyo3_asyncio::tokio::get_runtime().block_on(async {
+            return db.query_all(table.as_str(), cols.as_slice(), None).await;
+        });
+
+        match result {
+            Ok(rows) => {
+                for i in 0..rows.len() {
+                    let row: &rorm_db::row::Row = &rows[i];
+                    let mut m = HashMap::new();
+                    for (col, col_t) in &columns {
+                        let e = match col_t {
+                            DatabaseValueType::Null => py.None(),
+                            DatabaseValueType::String => {
+                                handle_db_err!(py, row.get::<&str, &str>(col))
+                            }
+                            DatabaseValueType::I64 => handle_db_err!(py, row.get::<i64, &str>(col)),
+                            DatabaseValueType::I32 => handle_db_err!(py, row.get::<i32, &str>(col)),
+                            DatabaseValueType::I16 => handle_db_err!(py, row.get::<i16, &str>(col)),
+                            DatabaseValueType::Bool => {
+                                handle_db_err!(py, row.get::<bool, &str>(col))
+                            }
+                            DatabaseValueType::F64 => handle_db_err!(py, row.get::<f64, &str>(col)),
+                            DatabaseValueType::F32 => handle_db_err!(py, row.get::<f32, &str>(col)),
+                            DatabaseValueType::Binary => py.None(), // TODO
+                            DatabaseValueType::NaiveTime => py.None(), // TODO
+                            DatabaseValueType::NaiveDate => py.None(), // TODO
+                            DatabaseValueType::NaiveDateTime => py.None(), // TODO
+                        };
+                        m.insert(*col, e);
+                    }
+                    results.push(m);
+                }
+            }
+            Err(e) => return Err(BindingError::new_err(e.to_string())),
+        };
+        return Ok(PyList::new(py, results));
+    }
+}
+
 #[pyfunction(module = "rorm_python.bindings")]
 fn connect_sqlite_database(
     py: Python<'_>,
