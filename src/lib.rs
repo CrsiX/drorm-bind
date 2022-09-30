@@ -92,6 +92,17 @@ impl Database {
         };
         return Ok(PyList::new(py, results));
     }
+
+    /// Delete all rows of a table synchronously
+    fn delete_all_sync(self_: PyRef<Self>, table: String) -> PyResult<bool> {
+        let db: &rorm_db::Database = self_.db.as_ref();
+        pyo3_asyncio::tokio::get_runtime().block_on(async {
+            return match db.delete(table.as_str(), None).await {
+                Ok(v) => Ok(true),
+                Err(v) => Err(BindingError::new_err(v.to_string())),
+            };
+        })
+    }
 }
 
 #[pyfunction(module = "rorm_python.bindings")]
