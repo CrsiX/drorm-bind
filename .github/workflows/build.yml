@@ -36,5 +36,5 @@ jobs:
     - name: Use the python module
       run: |
         . venv/bin/activate
-        python3 -c "import rorm_python; print('OK');"
+        python3 -c "import rorm_python; import rorm_python.bindings; print('OK');"
         python3 -m rorm_python --help
