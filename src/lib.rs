@@ -9,6 +9,8 @@ use rorm::{config::DatabaseConfig, Database, DatabaseConfiguration, DatabaseDriv
 mod common;
 mod errors;
 mod macros;
+mod mysql;
+mod postgres;
 mod sqlite;
 
 /**
@@ -36,16 +38,20 @@ fn bindings(_py: Python, m: &PyModule) -> PyResult<()> {
         "InterfaceError",
         _py.get_type::<errors::NotSupportedError>(),
     )?;
-    m.add_submodule(mod_err);
+    m.add_submodule(mod_err)?;
 
     // MySQL-specific implementation details
+    let mod_mysql = PyModule::new(_py, "mysql")?;
+    m.add_submodule(mod_mysql)?;
 
     // Postgres-specific implementation details
+    let mod_postgres = PyModule::new(_py, "postgres")?;
+    m.add_submodule(mod_postgres)?;
 
     // SQLite-specific implementation details
     let mod_sqlite = PyModule::new(_py, "sqlite")?;
-    sqlite::sqlite(_py, mod_sqlite);
-    m.add_submodule(mod_sqlite);
+    sqlite::sqlite(_py, mod_sqlite)?;
+    m.add_submodule(mod_sqlite)?;
 
     // Generic, non-specific features
     m.add_class::<common::Database>()?;
