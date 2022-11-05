@@ -11,6 +11,8 @@ use tokio::runtime;
 use rorm_db;
 use rorm_sql;
 
+mod errors;
+
 create_exception!(
     rorm_python,
     BindingError,
@@ -162,6 +164,26 @@ their behavior or API without explicit notice between versions.
  */
 #[pymodule]
 fn bindings(_py: Python, m: &PyModule) -> PyResult<()> {
+    // Error classes required by Database API Spec 2.0
+    let mod_err = PyModule::new(_py, "errors")?;
+    mod_err.add("Error", _py.get_type::<errors::Error>())?;
+    mod_err.add("Warning", _py.get_type::<errors::Warning>())?;
+    mod_err.add("InterfaceError", _py.get_type::<errors::InterfaceError>())?;
+    mod_err.add("DatabaseError", _py.get_type::<errors::DatabaseError>())?;
+    mod_err.add("DataError", _py.get_type::<errors::DataError>())?;
+    mod_err.add(
+        "OperationalError",
+        _py.get_type::<errors::OperationalError>(),
+    )?;
+    mod_err.add("IntegrityError", _py.get_type::<errors::IntegrityError>())?;
+    mod_err.add("InternalError", _py.get_type::<errors::InternalError>())?;
+    mod_err.add("InterfaceError", _py.get_type::<errors::ProgrammingError>())?;
+    mod_err.add(
+        "InterfaceError",
+        _py.get_type::<errors::NotSupportedError>(),
+    )?;
+    m.add_submodule(mod_err);
+
     m.add("BindingError", _py.get_type::<BindingError>())?;
     m.add_function(wrap_pyfunction!(connect_sqlite_database, m)?)?;
     m.add_class::<Database>()?;
