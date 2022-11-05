@@ -1,23 +1,25 @@
-use pyo3::create_exception;
-use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use rorm::{config::DatabaseConfig, Database as DB, DatabaseConfiguration, DatabaseDriver};
+use rorm::{Database, DatabaseConfiguration, DatabaseDriver};
 
 use crate::common;
 use crate::errors;
+
+static DEFAULT_MAX_CONNECTIONS: u32 = 16;
 
 #[pyfunction(module = "rorm_python.bindings.sqlite")]
 fn connect(
     py: Python<'_>,
     filename: String,
-    min_connections: u32,
-    max_connections: u32,
+    min_connections: Option<u32>,
+    max_connections: Option<u32>,
 ) -> PyResult<&PyAny> {
     pyo3_asyncio::tokio::future_into_py(py, async move {
-        match DB::connect(DatabaseConfiguration {
+        match Database::connect(DatabaseConfiguration {
             driver: DatabaseDriver::SQLite { filename },
-            min_connections,
-            max_connections,
+            min_connections: min_connections.or_else(|| Some(1)).unwrap(),
+            max_connections: max_connections
+                .or_else(|| Some(DEFAULT_MAX_CONNECTIONS))
+                .unwrap(),
         })
         .await
         {

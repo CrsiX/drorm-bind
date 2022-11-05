@@ -1,10 +1,4 @@
-use pyo3::create_exception;
-use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
-use std::collections::HashMap;
-
-use rorm::{config::DatabaseConfig, Database, DatabaseConfiguration, DatabaseDriver};
 
 mod common;
 mod errors;
@@ -12,6 +6,7 @@ mod macros;
 mod mysql;
 mod postgres;
 mod sqlite;
+mod utils;
 
 /**
 Direct Python bindings for RORM, the Rust ORM
@@ -42,16 +37,23 @@ fn bindings(_py: Python, m: &PyModule) -> PyResult<()> {
 
     // MySQL-specific implementation details
     let mod_mysql = PyModule::new(_py, "mysql")?;
+    mysql::mysql(_py, mod_mysql)?;
     m.add_submodule(mod_mysql)?;
 
     // Postgres-specific implementation details
     let mod_postgres = PyModule::new(_py, "postgres")?;
+    postgres::postgres(_py, mod_postgres)?;
     m.add_submodule(mod_postgres)?;
 
     // SQLite-specific implementation details
     let mod_sqlite = PyModule::new(_py, "sqlite")?;
     sqlite::sqlite(_py, mod_sqlite)?;
     m.add_submodule(mod_sqlite)?;
+
+    // Various utility features
+    let mod_utils = PyModule::new(_py, "utils")?;
+    utils::utils(_py, mod_utils)?;
+    m.add_submodule(mod_utils)?;
 
     // Generic, non-specific features
     m.add_class::<common::Database>()?;

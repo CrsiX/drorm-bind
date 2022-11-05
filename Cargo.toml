@@ -15,6 +15,8 @@ pyo3 = { version = "0.16", features = ["extension-module"] }
 pyo3-asyncio = { version = "0.16", features = ["tokio-runtime"] }
 tokio = { version = "~1", features = ["full"] }
 chrono = { version = "^0.4" }
+toml = "0.5.9"
+serde = "1.0.147"
 
 [package.metadata.maturin]
 name = "rorm_python.bindings"
